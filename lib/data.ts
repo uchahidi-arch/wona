@@ -35,13 +35,20 @@ export interface Releve {
   batterie_v: number
 }
 
-// ── MOCK DATA ──────────────────────────────────────────────────────────────
+export interface PointHistorique {
+  time: string
+  pa: number
+  pr: number
+  papp: number
+}
+
+// ── DONNÉES STATIQUES (ne changent pas) ───────────────────────────────────
 
 export const SITES: Site[] = [
-  { id: '1', nom: 'Voidjou', slug: 'voidjou', localisation: 'Ngazidja Nord', actif: true },
+  { id: '1', nom: 'Voidjou',     slug: 'voidjou',     localisation: 'Ngazidja Nord',   actif: true },
   { id: '2', nom: 'Itsambouni', slug: 'itsambouni', localisation: 'Ngazidja Centre', actif: true },
-  { id: '3', nom: 'Fomboni', slug: 'fomboni', localisation: 'Mwali', actif: true },
-  { id: '4', nom: 'Trenani', slug: 'trenani', localisation: 'Ngazidja Sud', actif: true },
+  { id: '3', nom: 'Fomboni',    slug: 'fomboni',    localisation: 'Mwali',           actif: true },
+  { id: '4', nom: 'Trenani',    slug: 'trenani',    localisation: 'Ndzuani',    actif: true },
 ]
 
 export const GROUPES: Groupe[] = [
@@ -58,44 +65,11 @@ export const GROUPES: Groupe[] = [
   { id: 'tr1', site_id: '4', nom: '25-TR1', etat: 'STOPPED', puissance_installee: 800  },
 ]
 
-export function getMockReleve(groupeId: string): Releve {
-  const base = Math.random()
-  return {
-    id: groupeId,
-    groupe_id: groupeId,
-    timestamp: new Date().toISOString(),
-    tension_l1: 400 + Math.random() * 10 - 5,
-    tension_l2: 402 + Math.random() * 10 - 5,
-    tension_l3: 404 + Math.random() * 10 - 5,
-    courant_l1: 1240 + Math.random() * 50,
-    courant_l2: 1290 + Math.random() * 50,
-    courant_l3: 1290 + Math.random() * 50,
-    frequence: 49 + Math.random() * 2 - 1,
-    puissance_active: 771 + Math.random() * 50,
-    puissance_reactive: 458 + Math.random() * 30,
-    puissance_apparente: 897 + Math.random() * 40,
-    facteur_puissance: 0.80 + Math.random() * 0.15,
-    temp_eau: 78 + Math.random() * 10,
-    pression_huile: 4.2 + Math.random() * 0.5,
-    niveau_gazoil: 60 + Math.random() * 30,
-    heures_marche: 8420 + Math.floor(Math.random() * 100),
-    vitesse_rotation: 1500 + Math.random() * 10 - 5,
-    batterie_v: 24 + Math.random() * 4,
-  }
-}
-
-export function getMockHistorique(groupeId: string): Array<{time: string, pa: number, pr: number, papp: number}> {
-  return Array.from({ length: 24 }, (_, i) => ({
-    time: `${String(i).padStart(2,'0')}:00`,
-    pa: 700 + Math.random() * 200,
-    pr: 400 + Math.random() * 100,
-    papp: 850 + Math.random() * 100,
-  }))
-}
+// ── HELPERS (calculs sur les constantes) ──────────────────────────────────
 
 export function getSiteEtat(siteId: string): Etat {
   const groupes = GROUPES.filter(g => g.site_id === siteId)
-  if (groupes.some(g => g.etat === 'ALARM')) return 'ALARM'
+  if (groupes.some(g => g.etat === 'ALARM'))    return 'ALARM'
   if (groupes.every(g => g.etat === 'STOPPED')) return 'STOPPED'
   return 'RUNNING'
 }

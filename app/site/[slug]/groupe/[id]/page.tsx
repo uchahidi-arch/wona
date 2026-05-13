@@ -1,30 +1,29 @@
-'use client'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { SITES, GROUPES, getMockReleve, getMockHistorique } from '@/lib/data'
+import { SITES, GROUPES } from '@/lib/data'
+import { getReleve, getHistorique } from '@/lib/influx'
 import EtatBadge from '@/components/EtatBadge'
 import Gauge from '@/components/Gauge'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import GroupeChart from '@/components/GroupeChart'
+import HistoriqueTable from '@/components/HistoriqueTable'
 
-export default function GroupePage() {
-  const { slug, id } = useParams<{ slug: string; id: string }>()
+// Server Component — fetch InfluxDB au rendu.
+
+interface Props {
+  params: { slug: string; id: string }
+}
+
+export default async function GroupePage({ params }: Props) {
+  const { slug, id } = params
   const site = SITES.find(s => s.slug === slug)
   const groupe = GROUPES.find(g => g.id === id)
-  const r = getMockReleve(id)
-  const historique = getMockHistorique(id)
 
   if (!site || !groupe) return <div className="p-8 text-[#6b7280]">Groupe introuvable</div>
 
-  const releves_recents = Array.from({ length: 8 }, (_, i) => {
-    const t = new Date(Date.now() - i * 5 * 60 * 1000)
-    return {
-      time: t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-      tension: (400 + Math.random() * 10 - 5).toFixed(1),
-      freq: (49 + Math.random() * 1).toFixed(2),
-      pa: (770 + Math.random() * 30).toFixed(0),
-      fp: (0.82 + Math.random() * 0.08).toFixed(2),
-    }
-  }).reverse()
+  // Fetch en parallèle : dernier relevé + historique 24h
+  const [r, historique] = await Promise.all([
+    getReleve(id),
+    getHistorique(id),
+  ])
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
@@ -47,7 +46,7 @@ export default function GroupePage() {
           <EtatBadge etat={groupe.etat} large />
         </div>
         <div className="text-[11px] font-mono text-[#9ca3af]">
-          {new Date().toLocaleString('fr-FR')}
+          {new Date(r.timestamp).toLocaleString('fr-FR')}
         </div>
       </div>
 
@@ -128,53 +127,18 @@ export default function GroupePage() {
         </div>
       </div>
 
-      {/* GRAPHIQUE 24H */}
+      {/* GRAPHIQUE 24H — Client Component pour Recharts */}
       <div className="bg-white border border-[#e4e4e0] rounded-sm mb-4 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[#6b7280]">
             Évolution sur 24h — Puissances (kW)
           </h3>
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={historique} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0ee" />
-            <XAxis dataKey="time" tick={{ fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#9ca3af' }} axisLine={false} tickLine={false} interval={3} />
-            <YAxis tick={{ fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono', border: '1px solid #e4e4e0', borderRadius: 2 }} />
-            <Legend iconSize={8} iconType="line" wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
-            <Line type="monotone" dataKey="pa" stroke="#16a34a" strokeWidth={1.5} dot={false} name="P. Active" />
-            <Line type="monotone" dataKey="pr" stroke="#ea580c" strokeWidth={1.5} dot={false} name="P. Réactive" />
-            <Line type="monotone" dataKey="papp" stroke="#2563eb" strokeWidth={1.5} dot={false} name="P. Apparente" />
-          </LineChart>
-        </ResponsiveContainer>
+        <GroupeChart data={historique} />
       </div>
 
-      {/* HISTORIQUE RELEVES */}
-      <div className="bg-white border border-[#e4e4e0] rounded-sm p-5">
-        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[#6b7280] mb-4">
-          Historique des relevés
-        </h3>
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="border-b border-[#e4e4e0]">
-              {['Heure', 'Tension (V)', 'Fréquence (Hz)', 'P. Active (kW)', 'Facteur P.'].map(h => (
-                <th key={h} className="text-left pb-2 text-[10px] text-[#9ca3af] uppercase tracking-wide font-semibold pr-6">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {releves_recents.map((row, i) => (
-              <tr key={i} className="border-b border-[#f5f5f3] hover:bg-[#f9f9f8]">
-                <td className="py-2 pr-6 font-mono text-[#6b7280]" style={{ fontFamily: 'JetBrains Mono' }}>{row.time}</td>
-                <td className="py-2 pr-6 font-mono font-semibold" style={{ fontFamily: 'JetBrains Mono' }}>{row.tension}</td>
-                <td className="py-2 pr-6 font-mono font-semibold" style={{ fontFamily: 'JetBrains Mono' }}>{row.freq}</td>
-                <td className="py-2 pr-6 font-mono font-semibold" style={{ fontFamily: 'JetBrains Mono' }}>{row.pa}</td>
-                <td className="py-2 font-mono font-semibold" style={{ fontFamily: 'JetBrains Mono' }}>{row.fp}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* HISTORIQUE RELEVES — Client Component pour la pagination éventuelle */}
+      <HistoriqueTable groupeId={id} />
     </div>
   )
 }

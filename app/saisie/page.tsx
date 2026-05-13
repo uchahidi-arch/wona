@@ -2,6 +2,9 @@
 import { useState } from 'react'
 import { SITES, GROUPES } from '@/lib/data'
 
+// Pas de mock ici — SITES et GROUPES sont des constantes statiques.
+// Le submit envoie les données vers /api/releve qui écrit dans InfluxDB.
+
 const CHAMPS = [
   { key: 'tension_l1', label: 'Tension L1', unit: 'V', min: 350, max: 450 },
   { key: 'tension_l2', label: 'Tension L2', unit: 'V', min: 350, max: 450 },
@@ -24,8 +27,10 @@ export default function SaisiePage() {
   const [siteId, setSiteId] = useState('')
   const [groupeId, setGroupeId] = useState('')
   const [valeurs, setValeurs] = useState<Record<string, string>>({})
+  const [timestamp, setTimestamp] = useState(new Date().toISOString().slice(0, 16))
   const [sent, setSent] = useState(false)
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const groupesFiltres = GROUPES.filter(g => g.site_id === siteId)
 
@@ -36,16 +41,42 @@ export default function SaisiePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSending(true)
-    await new Promise(r => setTimeout(r, 800))
-    setSending(false)
-    setSent(true)
+    setError(null)
+
+    try {
+      // Envoie vers l'API route /api/releve qui écrit dans InfluxDB
+      const res = await fetch('/api/releve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupe_id: groupeId,
+          timestamp: new Date(timestamp).toISOString(),
+          ...Object.fromEntries(
+            Object.entries(valeurs).map(([k, v]) => [k, parseFloat(v)])
+          ),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Erreur serveur')
+      }
+
+      setSent(true)
+    } catch (err: any) {
+      setError(err.message ?? 'Erreur inconnue')
+    } finally {
+      setSending(false)
+    }
   }
 
   const reset = () => {
     setValeurs({})
     setSent(false)
+    setError(null)
     setSiteId('')
     setGroupeId('')
+    setTimestamp(new Date().toISOString().slice(0, 16))
   }
 
   if (sent) {
@@ -60,7 +91,7 @@ export default function SaisiePage() {
             {GROUPES.find(g => g.id === groupeId)?.nom} — {SITES.find(s => s.id === siteId)?.nom}
           </p>
           <p className="text-[11px] font-mono text-[#9ca3af] mb-6">
-            {new Date().toLocaleString('fr-FR')}
+            {new Date(timestamp).toLocaleString('fr-FR')}
           </p>
           <button
             onClick={reset}
@@ -178,10 +209,18 @@ export default function SaisiePage() {
           <label className="text-[11px] text-[#6b7280] font-medium mb-1.5 block">Heure du relevé</label>
           <input
             type="datetime-local"
-            defaultValue={new Date().toISOString().slice(0, 16)}
+            value={timestamp}
+            onChange={e => setTimestamp(e.target.value)}
             className="w-full border border-[#e4e4e0] rounded-sm px-3 py-3 text-[14px] bg-white"
           />
         </div>
+
+        {/* Erreur */}
+        {error && (
+          <div className="bg-[#fff7ed] border border-[#fed7aa] rounded-sm px-4 py-3 text-[13px] text-[#ea580c] font-medium">
+            ⚠ {error}
+          </div>
+        )}
 
         {/* Submit */}
         <button

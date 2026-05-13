@@ -1,18 +1,34 @@
-'use client'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { SITES, GROUPES, getMockReleve, getMockHistorique, etatColor, etatBg, etatBorder } from '@/lib/data'
+import { SITES, GROUPES, etatBorder } from '@/lib/data'
+import { getReleve, getHistorique } from '@/lib/influx'
 import EtatBadge from '@/components/EtatBadge'
 import Gauge from '@/components/Gauge'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import SiteChart from '@/components/SiteChart'
 
-export default function SitePage() {
-  const { slug } = useParams<{ slug: string }>()
+// Server Component — les données sont fetchées côté serveur au moment du rendu.
+// Quand InfluxDB est connecté, getReleve() et getHistorique() retournent les vraies données.
+
+interface Props {
+  params: { slug: string }
+}
+
+export default async function SitePage({ params }: Props) {
+  const { slug } = params
   const site = SITES.find(s => s.slug === slug)
   const groupes = GROUPES.filter(g => g.site_id === site?.id)
-  const historique = getMockHistorique('site')
 
   if (!site) return <div className="p-8 text-[#6b7280]">Site introuvable</div>
+
+  // Fetch tous les relevés des groupes du site en parallèle
+  const releves = await Promise.all(
+    groupes.map(g => getReleve(g.id))
+  )
+
+  // Historique du premier groupe RUNNING pour le graphique site
+  const groupeRunning = groupes.find(g => g.etat === 'RUNNING')
+  const historique = groupeRunning
+    ? await getHistorique(groupeRunning.id)
+    : []
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
@@ -39,8 +55,8 @@ export default function SitePage() {
 
       {/* Groupes grid */}
       <div className="grid grid-cols-1 gap-4 mb-8">
-        {groupes.map(groupe => {
-          const r = getMockReleve(groupe.id)
+        {groupes.map((groupe, idx) => {
+          const r = releves[idx]
           const isRunning = groupe.etat === 'RUNNING'
 
           return (
@@ -70,7 +86,6 @@ export default function SitePage() {
 
               {isRunning && (
                 <div className="px-5 py-4">
-                  {/* Systeme electrique */}
                   <div className="mb-3">
                     <div className="text-[9px] font-bold uppercase tracking-widest text-[#9ca3af] mb-3">
                       ⚡ Système électrique
@@ -85,7 +100,6 @@ export default function SitePage() {
                     </div>
                   </div>
 
-                  {/* Courants */}
                   <div>
                     <div className="text-[9px] font-bold uppercase tracking-widest text-[#9ca3af] mb-3">
                       Courants phases
@@ -118,7 +132,7 @@ export default function SitePage() {
         })}
       </div>
 
-      {/* Production journalière */}
+      {/* Production journalière — SiteChart est un Client Component pour Recharts */}
       <div className="bg-white border border-[#e4e4e0] rounded-sm p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[#6b7280]">
@@ -126,24 +140,7 @@ export default function SitePage() {
           </h3>
           <span className="text-[11px] font-mono text-[#9ca3af]">Aujourd'hui</span>
         </div>
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart data={historique} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="gradPA" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
-                <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0ee" />
-            <XAxis dataKey="time" tick={{ fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ fontSize: 12, fontFamily: 'JetBrains Mono', border: '1px solid #e4e4e0', borderRadius: 2 }}
-              labelStyle={{ color: '#6b7280' }}
-            />
-            <Area type="monotone" dataKey="pa" stroke="#16a34a" strokeWidth={1.5} fill="url(#gradPA)" name="kWh" dot={false} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <SiteChart data={historique} />
       </div>
     </div>
   )

@@ -1,6 +1,9 @@
 'use client'
-import { useState, useMemo } from 'react'
-import { SITES, GROUPES, getMockReleve } from '@/lib/data'
+import { useState, useMemo, useEffect } from 'react'
+import { SITES, GROUPES } from '@/lib/data'
+
+// Les données viennent de /api/historique (qui lit InfluxDB).
+// Quand InfluxDB n'est pas encore connecté, l'API retourne [] et le tableau est vide.
 
 const COLONNES = [
   { key: 'timestamp', label: 'Horodatage' },
@@ -15,56 +18,54 @@ const COLONNES = [
   { key: 'niveau_gazoil', label: 'Gazoil (%)' },
 ]
 
-function genHistorique() {
-  const rows: any[] = []
-  const now = Date.now()
-  GROUPES.forEach(g => {
-    for (let i = 0; i < 24; i++) {
-      const r = getMockReleve(g.id)
-      rows.push({
-        ...r,
-        groupe: g.nom,
-        site_id: g.site_id,
-        groupe_id: g.id,
-        timestamp: new Date(now - i * 3600000).toISOString(),
-      })
-    }
-  })
-  return rows.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-}
+const PER_PAGE = 20
 
-const ALL_DATA = genHistorique()
+function formatVal(key: string, val: any) {
+  if (key === 'timestamp') {
+    return new Date(val).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  }
+  if (key === 'groupe') return val
+  if (key === 'facteur_puissance') return Number(val).toFixed(2)
+  if (key === 'frequence') return Number(val).toFixed(1)
+  return Number(val).toFixed(0)
+}
 
 export default function HistoriquePage() {
   const [siteId, setSiteId] = useState('all')
   const [groupeId, setGroupeId] = useState('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const PER_PAGE = 20
+  const [data, setData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   const groupesFiltres = siteId === 'all' ? GROUPES : GROUPES.filter(g => g.site_id === siteId)
 
+  // Fetch depuis l'API route au changement de filtre
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (siteId !== 'all') params.set('site_id', siteId)
+    if (groupeId !== 'all') params.set('groupe_id', groupeId)
+
+    fetch(`/api/historique?${params.toString()}`)
+      .then(r => r.json())
+      .then(rows => {
+        setData(rows)
+        setPage(1)
+      })
+      .catch(() => setData([]))
+      .finally(() => setLoading(false))
+  }, [siteId, groupeId])
+
   const filtered = useMemo(() => {
-    return ALL_DATA.filter(row => {
-      if (siteId !== 'all' && row.site_id !== siteId) return false
-      if (groupeId !== 'all' && row.groupe_id !== groupeId) return false
-      if (search && !row.groupe.toLowerCase().includes(search.toLowerCase())) return false
-      return true
-    })
-  }, [siteId, groupeId, search])
+    if (!search) return data
+    return data.filter(row =>
+      String(row.groupe ?? '').toLowerCase().includes(search.toLowerCase())
+    )
+  }, [data, search])
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE)
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
-
-  function formatVal(key: string, val: any) {
-    if (key === 'timestamp') {
-      return new Date(val).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-    }
-    if (key === 'groupe') return val
-    if (key === 'facteur_puissance') return Number(val).toFixed(2)
-    if (key === 'frequence') return Number(val).toFixed(1)
-    return Number(val).toFixed(0)
-  }
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -85,10 +86,9 @@ export default function HistoriquePage() {
       {/* Filtres */}
       <div className="bg-white border border-[#e4e4e0] rounded-sm p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
-
           <select
             value={siteId}
-            onChange={e => { setSiteId(e.target.value); setGroupeId('all'); setPage(1) }}
+            onChange={e => { setSiteId(e.target.value); setGroupeId('all') }}
             className="border border-[#e4e4e0] rounded-sm px-3 py-1.5 text-[12px] bg-white focus:outline-none focus:border-[#1a1a1a]"
           >
             <option value="all">Tous les sites</option>
@@ -113,7 +113,7 @@ export default function HistoriquePage() {
           />
 
           <div className="ml-auto text-[11px] text-[#9ca3af]" style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-            {filtered.length} relevés
+            {loading ? '...' : `${filtered.length} relevés`}
           </div>
         </div>
       </div>
@@ -125,40 +125,39 @@ export default function HistoriquePage() {
             <thead>
               <tr className="border-b border-[#e4e4e0] bg-[#f5f5f3]">
                 {COLONNES.map(col => (
-                  <th
-                    key={col.key}
-                    className="px-4 py-2.5 text-left font-bold uppercase tracking-widest text-[10px] text-[#9ca3af] whitespace-nowrap"
-                  >
+                  <th key={col.key} className="px-4 py-2.5 text-left font-bold uppercase tracking-widest text-[10px] text-[#9ca3af] whitespace-nowrap">
                     {col.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {paginated.map((row, i) => (
-                <tr
-                  key={i}
-                  className="border-b border-[#f0f0ee] hover:bg-[#fafafa] transition-colors"
-                >
-                  {COLONNES.map(col => (
-                    <td
-                      key={col.key}
-                      className={`px-4 py-2.5 text-[#1a1a1a] whitespace-nowrap ${
-                        col.key === 'groupe' ? 'font-semibold' : ''
-                      }`}
-                      style={col.key !== 'groupe' && col.key !== 'timestamp' ? { fontFamily: 'JetBrains Mono, monospace' } : {}}
-                    >
-                      {formatVal(col.key, row[col.key])}
-                    </td>
-                  ))}
+              {loading ? (
+                <tr>
+                  <td colSpan={COLONNES.length} className="px-4 py-8 text-center text-[#9ca3af] text-[13px]">
+                    Chargement...
+                  </td>
                 </tr>
-              ))}
-              {paginated.length === 0 && (
+              ) : paginated.length === 0 ? (
                 <tr>
                   <td colSpan={COLONNES.length} className="px-4 py-8 text-center text-[#9ca3af] text-[13px]">
                     Aucun relevé trouvé
                   </td>
                 </tr>
+              ) : (
+                paginated.map((row, i) => (
+                  <tr key={i} className="border-b border-[#f0f0ee] hover:bg-[#fafafa] transition-colors">
+                    {COLONNES.map(col => (
+                      <td
+                        key={col.key}
+                        className={`px-4 py-2.5 text-[#1a1a1a] whitespace-nowrap ${col.key === 'groupe' ? 'font-semibold' : ''}`}
+                        style={col.key !== 'groupe' && col.key !== 'timestamp' ? { fontFamily: 'JetBrains Mono, monospace' } : {}}
+                      >
+                        {formatVal(col.key, row[col.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -168,14 +167,12 @@ export default function HistoriquePage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-[11px] text-[#9ca3af]">
-            Page {page} / {totalPages}
-          </div>
+          <div className="text-[11px] text-[#9ca3af]">Page {page} / {totalPages}</div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-3 py-1.5 text-[12px] border border-[#e4e4e0] rounded-sm bg-white text-[#6b7280] hover:border-[#1a1a1a] hover:text-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-[12px] border border-[#e4e4e0] rounded-sm bg-white text-[#6b7280] hover:border-[#1a1a1a] disabled:opacity-40 transition-colors"
             >
               Précédent
             </button>
@@ -188,7 +185,7 @@ export default function HistoriquePage() {
                   className={`w-8 h-8 text-[12px] border rounded-sm transition-colors ${
                     p === page
                       ? 'bg-[#1a1a1a] text-white border-[#1a1a1a]'
-                      : 'bg-white text-[#6b7280] border-[#e4e4e0] hover:border-[#1a1a1a] hover:text-[#1a1a1a]'
+                      : 'bg-white text-[#6b7280] border-[#e4e4e0] hover:border-[#1a1a1a]'
                   }`}
                 >
                   {p}
@@ -198,14 +195,13 @@ export default function HistoriquePage() {
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="px-3 py-1.5 text-[12px] border border-[#e4e4e0] rounded-sm bg-white text-[#6b7280] hover:border-[#1a1a1a] hover:text-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 text-[12px] border border-[#e4e4e0] rounded-sm bg-white text-[#6b7280] hover:border-[#1a1a1a] disabled:opacity-40 transition-colors"
             >
               Suivant
             </button>
           </div>
         </div>
       )}
-
     </div>
   )
 }

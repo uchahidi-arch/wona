@@ -2,7 +2,15 @@ import Link from 'next/link'
 import { SITES, GROUPES, getSiteEtat, getSitePuissance, etatColor, etatBg, etatBorder } from '@/lib/data'
 import EtatBadge from '@/components/EtatBadge'
 
+// Pas de mock ici — SITES et GROUPES sont des constantes statiques.
+// Quand tu branches Supabase, remplace SITES et GROUPES par des fetch() server-side.
+
 export default function HomePage() {
+  const totalRunning = GROUPES.filter(g => g.etat === 'RUNNING').length
+  const totalPuissance = SITES.reduce((sum, s) => sum + getSitePuissance(s.id), 0)
+  const totalProduction = Math.round(totalPuissance * 24 * 0.85) // estimation kWh/jour
+  const disponibilite = ((totalRunning / GROUPES.length) * 100).toFixed(1)
+
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="flex items-baseline justify-between mb-8">
@@ -11,7 +19,7 @@ export default function HomePage() {
             Vue générale
           </h1>
           <p className="text-[13px] text-[#6b7280] mt-0.5">
-            {SITES.length} sites — {GROUPES.filter(g => g.etat === 'RUNNING').length} groupes en marche
+            {SITES.length} sites — {totalRunning} groupes en marche
           </p>
         </div>
         <div className="text-[11px] font-mono text-[#9ca3af]">
@@ -89,16 +97,17 @@ export default function HomePage() {
         })}
       </div>
 
+      {/* Synthèse calculée depuis les constantes */}
       <div className="bg-white border border-[#e4e4e0] rounded-sm p-5">
         <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[#6b7280] mb-4">
           Synthèse — Tous sites
         </h3>
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Puissance active totale', value: '8 420', unit: 'kW' },
-            { label: 'Production journalière', value: '201 780', unit: 'kWh' },
-            { label: 'Groupes actifs', value: '7', unit: '/ 11' },
-            { label: 'Disponibilité', value: '63.6', unit: '%' },
+            { label: 'Puissance active totale', value: totalPuissance.toLocaleString('fr-FR'), unit: 'kW' },
+            { label: 'Production journalière est.', value: totalProduction.toLocaleString('fr-FR'), unit: 'kWh' },
+            { label: 'Groupes actifs', value: String(totalRunning), unit: `/ ${GROUPES.length}` },
+            { label: 'Disponibilité', value: disponibilite, unit: '%' },
           ].map((s, i) => (
             <div key={s.label} className={`${i > 0 ? 'border-l border-[#e4e4e0] pl-4' : ''}`}>
               <div className="text-[10px] text-[#9ca3af] uppercase tracking-wide mb-1">{s.label}</div>
